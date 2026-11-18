@@ -14,7 +14,8 @@ std::atomic<bool> g_running{true};
 std::wstring g_lastMessage = L"";
 std::wstring g_currentMessage = L"";
 
-const wchar_t* GIST_URL = L"https://gist.githubusercontent.com/TVOY_NICK/ID_GISTA/raw/update.json";
+// Твоя ссылка на гист
+const wchar_t* GIST_URL = L"https://gist.githubusercontent.com/essde342-bit/840fd8fabcb3dcd5b49b6576f2b3ad64/raw/update.json";
 
 // --- Сеть и парсинг ---
 std::wstring DownloadString(const std::wstring& url) {
@@ -262,7 +263,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_SHOW_POPUP: {
-            // Запускаем отрисовку попапа в отдельном потоке, чтобы не фризить инжектор
             std::thread(ShowCustomPopup).detach();
             break;
         }
@@ -310,7 +310,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nC
     
     ShowWindow(hMainWnd, nCmdShow);
 
-    // Запускаем фоновый чекинг
     std::thread(BackgroundChecker).detach();
 
     MSG msg;

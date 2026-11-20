@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <windowsx.h>
 #include <tlhelp32.h>
 #include <shlobj.h>
 #include <string>
@@ -14,7 +15,6 @@ std::atomic<bool> g_running{true};
 std::wstring g_lastMessage = L"";
 std::wstring g_currentMessage = L"";
 
-// Твоя ссылка на гист
 const wchar_t* GIST_URL = L"https://gist.githubusercontent.com/essde342-bit/840fd8fabcb3dcd5b49b6576f2b3ad64/raw/update.json";
 
 // --- Сеть и парсинг ---
@@ -49,6 +49,14 @@ std::wstring ParseMessage(const std::wstring& json) {
     return json.substr(start + 1, end - start - 1);
 }
 
+// Инициализация последнего сообщения, чтобы не спамить при старте
+void InitLastMessage() {
+    std::wstring json = DownloadString(GIST_URL);
+    if (!json.empty()) {
+        g_lastMessage = ParseMessage(json);
+    }
+}
+
 // --- Кастомное окно уведомления ---
 #define WM_SHOW_POPUP (WM_USER + 100)
 
@@ -66,13 +74,12 @@ void DrawPopup(HWND hwnd) {
     HBITMAP memBmp = CreateCompatibleBitmap(hdc, POPUP_W, POPUP_H);
     HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
 
-    // Фон
     HBRUSH bgBrush = CreateSolidBrush(RGB(245, 245, 245));
-    SelectObject(memDC, bgBrush);
-    SelectObject(memDC, GetStockObject(NULL_PEN));
+    HPEN nullPen = CreatePen(PS_NULL, 0, 0);
+    HPEN oldPen = (HPEN)SelectObject(memDC, nullPen);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(memDC, bgBrush);
     RoundRect(memDC, 0, 0, POPUP_W, POPUP_H, 10, 10);
 
-    // Шапка
     HBRUSH headerBrush = CreateSolidBrush(RGB(30, 136, 170));
     SelectObject(memDC, headerBrush);
     HRGN headerRgn = CreateRoundRectRgn(0, 0, POPUP_W, HEADER_H + 5, 10, 10);
@@ -81,7 +88,6 @@ void DrawPopup(HWND hwnd) {
     FillRgn(memDC, headerRgn, headerBrush);
     DeleteObject(headerRgn); DeleteObject(bodyRgn);
 
-    // Текст шапки
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
     HFONT fontHeader = CreateFontW(13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 
@@ -89,29 +95,32 @@ void DrawPopup(HWND hwnd) {
     HFONT oldFont = (HFONT)SelectObject(memDC, fontHeader);
     TextOutW(memDC, 12, 11, L"SYSTEM MESSAGE", 14);
 
-    // Кнопки шапки (зеленый, желтый, красный)
-    SelectObject(memDC, GetStockObject(DC_PEN));
-    SelectObject(memDC, GetStockObject(DC_BRUSH));
-    
-    SetDCBrushColor(memDC, RGB(46, 204, 113)); SetDCPenColor(memDC, RGB(39, 174, 96));
+    HPEN hPenGreen = CreatePen(PS_SOLID, 1, RGB(39, 174, 96));
+    HBRUSH hBrushGreen = CreateSolidBrush(RGB(46, 204, 113));
+    SelectObject(memDC, hPenGreen); SelectObject(memDC, hBrushGreen);
     Ellipse(memDC, POPUP_W - 90, 8, POPUP_W - 70, 28);
-    
-    SetDCBrushColor(memDC, RGB(241, 196, 15)); SetDCPenColor(memDC, RGB(243, 156, 18));
-    Ellipse(memDC, POPUP_W - 60, 8, POPUP_W - 40, 28);
-    
-    SetDCBrushColor(memDC, RGB(231, 76, 60)); SetDCPenColor(memDC, RGB(192, 57, 43));
-    Ellipse(memDC, POPUP_W - 30, 8, POPUP_W - 10, 28);
+    DeleteObject(hPenGreen); DeleteObject(hBrushGreen);
 
-    // Большой красный крестик
-    SetDCPenColor(memDC, RGB(231, 76, 60));
-    SetDCPenWidth(memDC, 4);
+    HPEN hPenYellow = CreatePen(PS_SOLID, 1, RGB(243, 156, 18));
+    HBRUSH hBrushYellow = CreateSolidBrush(RGB(241, 196, 15));
+    SelectObject(memDC, hPenYellow); SelectObject(memDC, hBrushYellow);
+    Ellipse(memDC, POPUP_W - 60, 8, POPUP_W - 40, 28);
+    DeleteObject(hPenYellow); DeleteObject(hBrushYellow);
+
+    HPEN hPenRed = CreatePen(PS_SOLID, 1, RGB(192, 57, 43));
+    HBRUSH hBrushRed = CreateSolidBrush(RGB(231, 76, 60));
+    SelectObject(memDC, hPenRed); SelectObject(memDC, hBrushRed);
+    Ellipse(memDC, POPUP_W - 30, 8, POPUP_W - 10, 28);
+    DeleteObject(hPenRed); DeleteObject(hBrushRed);
+
+    HPEN hCrossPen = CreatePen(PS_SOLID, 4, RGB(231, 76, 60));
+    SelectObject(memDC, hCrossPen); 
     SelectObject(memDC, GetStockObject(NULL_BRUSH));
     Ellipse(memDC, 130, 60, 190, 120);
-    
     MoveToEx(memDC, 145, 75, NULL); LineTo(memDC, 175, 105);
     MoveToEx(memDC, 175, 75, NULL); LineTo(memDC, 145, 105);
+    DeleteObject(hCrossPen);
 
-    // Текст уведомления
     SetTextColor(memDC, RGB(60, 60, 60));
     HFONT fontText = CreateFontW(16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 
                                   OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
@@ -120,10 +129,9 @@ void DrawPopup(HWND hwnd) {
     RECT textRect = {200, 60, POPUP_W - 20, 130};
     DrawTextW(memDC, g_currentMessage.c_str(), -1, &textRect, DT_WORDBREAK | DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    // Кнопка Cancel/Close
     HBRUSH btnBrush = CreateSolidBrush(g_closeBtnHover ? RGB(200, 200, 200) : RGB(220, 220, 220));
-    SelectObject(memDC, btnBrush);
-    SetDCPenColor(memDC, RGB(180, 180, 180));
+    HPEN btnPen = CreatePen(PS_SOLID, 1, RGB(180, 180, 180));
+    SelectObject(memDC, btnBrush); SelectObject(memDC, btnPen);
     RoundRect(memDC, rcCloseBtn.left, rcCloseBtn.top, rcCloseBtn.right, rcCloseBtn.bottom, 5, 5);
     
     SetTextColor(memDC, RGB(60, 60, 60));
@@ -133,14 +141,18 @@ void DrawPopup(HWND hwnd) {
     RECT btnTextRect = rcCloseBtn;
     DrawTextW(memDC, L"Close", -1, &btnTextRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    // Битмап на экран
     BitBlt(hdc, 0, 0, POPUP_W, POPUP_H, memDC, 0, 0, SRCCOPY);
 
     SelectObject(memDC, oldBmp);
+    SelectObject(memDC, oldPen);
+    SelectObject(memDC, oldBrush);
+    SelectObject(memDC, oldFont);
     DeleteObject(memBmp);
     DeleteObject(bgBrush);
+    DeleteObject(nullPen);
     DeleteObject(headerBrush);
     DeleteObject(btnBrush);
+    DeleteObject(btnPen);
     DeleteObject(fontHeader);
     DeleteObject(fontText);
     DeleteObject(fontBtn);
@@ -309,6 +321,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR lpCmdLine, int nC
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 200, nullptr, nullptr, hInst, nullptr);
     
     ShowWindow(hMainWnd, nCmdShow);
+
+    // Загружаем текущее сообщение, чтобы не показывать его при первом запуске
+    InitLastMessage();
 
     std::thread(BackgroundChecker).detach();
 
